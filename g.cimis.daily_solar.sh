@@ -46,6 +46,13 @@ DEBUG=0
 #% required: no
 #% guisection: Main
 #%end
+#%option
+#% key: interval
+#% type: integer
+#% description: GOES 18 image interval in minutes (if fetching), default 20
+#% required: no
+#% guisection: Main
+#%end
 
 function G_verify_mapset() {
   if [[ ! ${GBL[YYYYMMDD]} =~ ^20[012][0-9][01][0-9][0-3][0-9]$ ]]; then
@@ -338,6 +345,7 @@ GBL[interval]=20
 GBL[tmpdir]=/var/tmp/cimis
 GBL[DOY]=$(date --date="${GBL[YYYY]}-${GBL[MM]}-${GBL[DD]}" +%j)
 GBL[s3]=noaa-goes18
+GBL[pattern]='[012][0-9][0-5][0-9]PST-B2'
 
 # Get Options
 if [ $GIS_FLAG_X -eq 1 ] ; then
@@ -367,10 +375,11 @@ fi
 # test if parameter present:
 if [ -n "$GIS_OPT_PATTERN" ] ; then
   GBL[pattern]="$GIS_OPT_PATTERN"
-else
-  GBL[pattern]='[012][0-9][0-5][0-9]PST-B2'
 fi
 
+if [ -n "$GIS_OPT_INTERVAL" ] ; then
+  GBL[interval]="$GIS_OPT_INTERVAL"
+fi
 
 G_verify_mapset
 if ! ${GBL[cleanup]}; then
