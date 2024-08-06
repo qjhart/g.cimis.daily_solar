@@ -20,6 +20,11 @@ DEBUG=0
 #%  keywords: CIMIS evapotranspiration
 #%End
 #%flag
+#% key: x
+#% description: fetch the latest GOES 18 data from Amazon S3 if they do not exist
+#% guisection: Main
+#%end
+#%flag
 #% key: f
 #% description: force commands to be run regardless if files exist
 #% guisection: Main
@@ -73,6 +78,66 @@ function G_sunrise_sunset() {
     GBL[sunset]=$(g.gisenv get=sunset store=mapset)
   fi
   g.message -d debug=$DEBUG  message="From ${GBL[sunrise]} to ${GBL[sunset]}"
+}
+
+function get_image_interval_list() {
+  local interval=${GBL[interval]}
+  local sunrise=${GBL[sunrise]}
+  local sunset=${GBL[sunset]}
+  local from=$(( $sunrise / $interval * $interval ))
+  # For GOES 18, intervals start at the 1 minute mark
+  from=$(( $from + 1 ))
+  local list=
+  while true; do
+    local h=$(printf "%02d" $(( $from / 60 )))
+    local m=$(printf "%02d" $(( $from % 60 )))
+    list+="$h$mPST-B2 "
+    from=$(( $from + $interval ))
+    if [[ $from -gt $sunset ]]; then
+      break
+    fi
+  done
+  echo ${list:0:-1}
+}
+
+# https://github.com/awslabs/open-data-docs/tree/main/docs/noaa/noaa-goes16
+function fetch_B2() {
+  local list=$(get_image_interval_list)
+  g.message -d debug=$DEBUG message="image_interval_list=$list"
+  # GET Amazon S3 bucket files
+  local cache=${GBL[tmpdir]}/${GBL[YYYY]}/${GBL[MM]}/${GBL[DD]}
+  [[ -d $cache ]] || mkdir -p $cache
+  g.message -d debug=$DEBUG message="aws s3 list s3://${GBL[s3]}/ABI-L1b-RadC/${GBL[YYYY]}/${GBL[DOY]}/"
+  aws s3 list s3://${GBL[s3]}/ABI-L1b-RadC/${GBL[YYYY]}/${GBL[DOY]}/ --recursive --no-sign-request > $cache/goes18.list
+  # Get assoc array of filename from aws s3 list
+  declare -A files
+  for f in $(grep M6C02_G18 s3.txt | tr -s ' ' | cut -d' ' -f4); do
+    local k=$(echo $f | sed -e 's/.*_s'"${y}${j}"'\(....\)[0-9][0-9][0-9]_e.*$/\1/');
+    files[$k]=$f
+  done
+
+  # Verify setup
+  g.region -d; r.mask -r
+  for B in $list; do
+    if ((! r.info -r $B >/dev/null 2>&1 ) || ${GBL[force]}) && [[ -n ${files[$B]} ]]; then
+      local fn=${files[$B]}
+      local cache_fn=$cache/$(basename $fn)
+      if [[ ! -f $cache_fn ]]; then
+        g.message -d debug=$DEBUG message="aws s3 cp s3://${GBL[s3]}/$fn $cache_fn"
+        aws s3 cp s3://${GBL[s3]}/$fn $cache_fn
+      fi
+      # Import the file
+      g.message -d debug=$DEBUG message="r.in.gdal input=NETCDF:\"$cache_fn\":Rad output=$B location=goes18"
+      r.in.gdal input=NETCDF:"$cache_fn":Rad output=$B location=goes18
+      # Remove cache file
+      [[ ${GBL[save]} ]] || rm -f $cache_fn
+      # Project to the correct location
+      g.message -d debug=$DEBUG message="r.proj input=$B location=goes18 output=$B method=lanczos"
+      r.proj input=$B location=goes18 output=$B method=lanczos
+      # Remove the original file
+      [[ ${GBL[save]} ]] || (g.mapset location=goes18 mapset=${GBL[mapset]}; g.remove --quiet -f type=rast name=$B location=goes18)
+    fi
+  done
 }
 
 ### These functions are called at each timestep
@@ -269,8 +334,18 @@ GBL[DD]=${GBL[YYYYMMDD]:6:2}
 
 GBL[tz]=-8
 GBL[elevation]=Z@500m
+GBL[interval]=20
+GBL[tmpdir]=/var/tmp/cimis
+GBL[DOY]=$(date --date="${GBL[YYYY]}-${GBL[MM]}-${GBL[DD]}" +%j)
+GBL[s3]=noaa-goes18
 
 # Get Options
+if [ $GIS_FLAG_X -eq 1 ] ; then
+  GBL[fetch]=true
+else
+  GBL[fetch]=false
+fi
+
 if [ $GIS_FLAG_F -eq 1 ] ; then
   GBL[force]=true
 else
@@ -301,6 +376,10 @@ G_verify_mapset
 if ! ${GBL[cleanup]}; then
   G_linke
   G_sunrise_sunset
+  # Fetch files from Amazon S3
+  if ${GBL[fetch]}; then
+    fetch_B2
+  fi
   g.message -d debug=$DEBUG message="$(declare -p GBL)"
   integrated_G
 fi
