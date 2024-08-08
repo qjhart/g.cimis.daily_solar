@@ -404,8 +404,8 @@ if [ -n "$GIS_OPT_PATTERN" ] ; then
   GBL[pattern]="$GIS_OPT_PATTERN"
 fi
 
-if [ -n "$GIS_OPT_PROVIDER" ] ; then
-  if [[ $GIS_OPT_PROVIDER =~ ^s3:// ]]; then
+if [ -n "$GIS_OPT_BUCKET" ] ; then
+  if [[ $GIS_OPT_BUCKET =~ ^s3:// ]]; then
     GBL[s3]=$(echo $GIS_OPT_PROVIDER | cut -d/ -f3)
   else
     g.message -e "Provider must be s3://bucket"
