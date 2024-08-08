@@ -20,8 +20,8 @@ DEBUG=0
 #%  keywords: CIMIS evapotranspiration
 #%End
 #%flag
-#% key: x
-#% description: fetch the latest GOES 18 data from Amazon S3 if they do not exist
+#% key: d
+#% description: fetch files only
 #% guisection: Main
 #%end
 #%flag
@@ -43,6 +43,13 @@ DEBUG=0
 #% key: pattern
 #% type: string
 #% description: Replace pattern '[01][0-9][0-2][0-9]PST-B2' for testing only
+#% required: no
+#% guisection: Main
+#%end
+#%option
+#% key: bucket
+#% type: string
+#% description: cloud provider bucket name, default s3://noaa-goes18
 #% required: no
 #% guisection: Main
 #%end
@@ -98,7 +105,7 @@ function get_image_interval_list() {
   while true; do
     local h=$(printf "%02d" $(( $from / 60 )))
     local m=$(printf "%02d" $(( $from % 60 )))
-    list+="$h$mPST-B2 "
+    list+="$h${m}PST-B2 "
     from=$(( $from + $interval ))
     if [[ $from -gt $sunset ]]; then
       break
@@ -114,14 +121,31 @@ function fetch_B2() {
   # GET Amazon S3 bucket files
   local cache=${GBL[tmpdir]}/${GBL[YYYY]}/${GBL[MM]}/${GBL[DD]}
   [[ -d $cache ]] || mkdir -p $cache
-  g.message -d debug=$DEBUG message="aws s3 list s3://${GBL[s3]}/ABI-L1b-RadC/${GBL[YYYY]}/${GBL[DOY]}/"
-  aws s3 list s3://${GBL[s3]}/ABI-L1b-RadC/${GBL[YYYY]}/${GBL[DOY]}/ --recursive --no-sign-request > $cache/goes18.list
-  # Get assoc array of filename from aws s3 list
+  local doy
   declare -A files
-  for f in $(grep M6C02_G18 s3.txt | tr -s ' ' | cut -d' ' -f4); do
-    local k=$(echo $f | sed -e 's/.*_s'"${y}${j}"'\(....\)[0-9][0-9][0-9]_e.*$/\1/');
-    files[$k]=$f
+  local day=0
+
+  for doy in ${GBL[DOY]} $(( ${GBL[DOY]} + 1 )); do
+    local doy_list=$cache/${doy}.list
+    g.message -d debug=$DEBUG message="aws s3 list s3://${GBL[s3]}/ABI-L1b-RadC/${GBL[YYYY]}/${doy}/"
+    if [[ ! -f $doy_list ]]; then
+      aws s3 ls s3://${GBL[s3]}/ABI-L1b-RadC/${GBL[YYYY]}/${doy}/ --recursive --no-sign-request > $doy_list
+    fi
+    # Get assoc array of filename from aws s3 list
+#    g.message -d debug=$DEBUG message='s/.*_s'"${GBL[YYYY]}${doy}"'\(....\)[0-9][0-9][0-9]_e.*$/\1/'
+    for f in $(grep M6C02_G18 $doy_list | tr -s ' ' | cut -d' ' -f4); do
+      local k=$(echo $f | sed -e 's/.*_s'"${GBL[YYYY]}${doy}"'\(....\)[0-9][0-9][0-9]_e.*$/\1/');
+      local hh=$(( $day*24 + 10#${k:0:2} - 8 ))
+      local mm=${k:2:2}
+      if [[ $hh -gt 0 && $hh -lt 24 ]]; then
+        local b=$(printf "%02d%02dPST-B2" $hh $mm)
+#        g.message -d debug=$DEBUG message="k=$k hh=$hh mm=$mm b=$b f=$f"
+        files[$b]=$f
+      fi
+    done
+    day=$(( $day + 1 ))
   done
+#  declare -p files
 
   # Verify setup
   g.region -d; r.mask -r
@@ -131,11 +155,14 @@ function fetch_B2() {
       local cache_fn=$cache/$(basename $fn)
       if [[ ! -f $cache_fn ]]; then
         g.message -d debug=$DEBUG message="aws s3 cp s3://${GBL[s3]}/$fn $cache_fn"
-        aws s3 cp s3://${GBL[s3]}/$fn $cache_fn
+        aws s3 cp s3://${GBL[s3]}/$fn $cache_fn --no-sign-request
       fi
       # Import the file
-      g.message -d debug=$DEBUG message="r.in.gdal input=NETCDF:\"$cache_fn\":Rad output=$B location=goes18"
-      r.in.gdal input=NETCDF:"$cache_fn":Rad output=$B location=goes18
+      g.message -d debug=$DEBUG message="r.in.gdal input=NETCDF:\"$cache_fn\":Rad output=$B"
+      local location=$(g.gisenv get=LOCATION_NAME)
+      g.mapset -c location=goes18 mapset=${GBL[MAPSET]}
+      r.in.gdal input=NETCDF:"$cache_fn":Rad output=$B
+      g.mapset location=$location mapset=${GBL[MAPSET]}
       # Remove cache file
       [[ ${GBL[save]} ]] || rm -f $cache_fn
       # Project to the correct location
@@ -307,7 +334,7 @@ function integrated_G() {
 }
 
 function cleanup() {
-  for t in Gi_5x5 Gi G K; do
+  for t in B2_5x5 Gi G K; do
     local cmd="g.remove type=rast pattern='[0-9][0-9][0-9][0-9]PST-$t'"
     g.message -d debug=$DEBUG message="$cmd"
     #$cmd
@@ -344,14 +371,14 @@ GBL[elevation]=Z@500m
 GBL[interval]=20
 GBL[tmpdir]=/var/tmp/cimis
 GBL[DOY]=$(date --date="${GBL[YYYY]}-${GBL[MM]}-${GBL[DD]}" +%j)
-GBL[s3]=noaa-goes18
+GBL[s3]='noaa-goes18'
 GBL[pattern]='[012][0-9][0-5][0-9]PST-B2'
 
 # Get Options
-if [ $GIS_FLAG_X -eq 1 ] ; then
-  GBL[fetch]=true
+if [ $GIS_FLAG_D -eq 1 ] ; then
+  GBL[fetch_only]=true
 else
-  GBL[fetch]=false
+  GBL[fetch_only]=false
 fi
 
 if [ $GIS_FLAG_F -eq 1 ] ; then
@@ -377,6 +404,15 @@ if [ -n "$GIS_OPT_PATTERN" ] ; then
   GBL[pattern]="$GIS_OPT_PATTERN"
 fi
 
+if [ -n "$GIS_OPT_PROVIDER" ] ; then
+  if [[ $GIS_OPT_PROVIDER =~ ^s3:// ]]; then
+    GBL[s3]=$(echo $GIS_OPT_PROVIDER | cut -d/ -f3)
+  else
+    g.message -e "Provider must be s3://bucket"
+    exit 1
+  fi
+fi
+
 if [ -n "$GIS_OPT_INTERVAL" ] ; then
   GBL[interval]="$GIS_OPT_INTERVAL"
 fi
@@ -385,11 +421,15 @@ G_verify_mapset
 if ! ${GBL[cleanup]}; then
   G_linke
   G_sunrise_sunset
-  # Fetch files from Amazon S3
-  if ${GBL[fetch]}; then
-    fetch_B2
-  fi
   g.message -d debug=$DEBUG message="$(declare -p GBL)"
+  # Fetch files from Amazon S3
+  if [[ -n ${GBL[s3]} ]] ; then
+    fetch_B2
+    if ${GBL[fetch_only]} ;  then
+      g.message -d debug=$DEBUG message="fetch only, exiting"
+      exit 0
+    fi
+  fi
   integrated_G
 fi
 # Only remove intermediate files if we are finished or clean
