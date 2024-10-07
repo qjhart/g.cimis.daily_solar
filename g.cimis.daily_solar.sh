@@ -373,7 +373,7 @@ GBL[elevation]=Z@500m
 GBL[interval]=20
 GBL[tmpdir]=/var/tmp/cimis
 GBL[DOY]=$(date --date="${GBL[YYYY]}-${GBL[MM]}-${GBL[DD]}" +%j)
-GBL[s3]='noaa-goes18'
+#GBL[s3]='noaa-goes18'
 GBL[pattern]='[012][0-9][0-5][0-9]PST-B2'
 
 # Get Options
