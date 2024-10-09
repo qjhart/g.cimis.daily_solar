@@ -127,7 +127,7 @@ function fetch_B2() {
 
   for doy in ${GBL[DOY]} $(( ${GBL[DOY]} + 1 )); do
     local doy_list=$cache/${doy}.list
-    g.message -d debug=$DEBUG message="aws s3 list s3://${GBL[s3]}/ABI-L1b-RadC/${GBL[YYYY]}/${doy}/"
+    g.message -d debug=$DEBUG message="aws s3 ls s3://${GBL[s3]}/ABI-L1b-RadC/${GBL[YYYY]}/${doy}/ --recursive --no-sign-request"
     if [[ ! -f $doy_list ]]; then
       aws s3 ls s3://${GBL[s3]}/ABI-L1b-RadC/${GBL[YYYY]}/${doy}/ --recursive --no-sign-request > $doy_list
     fi
@@ -336,7 +336,7 @@ function integrated_G() {
 }
 
 function cleanup() {
-  for t in B2_5x5 Gi G K; do
+  for t in Gi G K; do
     local cmd="g.remove type=rast pattern='[0-9][0-9][0-9][0-9]PST-$t'"
     g.message -d debug=$DEBUG message="$cmd"
     #$cmd
@@ -373,7 +373,7 @@ GBL[elevation]=Z@500m
 GBL[interval]=20
 GBL[tmpdir]=/var/tmp/cimis
 GBL[DOY]=$(date --date="${GBL[YYYY]}-${GBL[MM]}-${GBL[DD]}" +%j)
-#GBL[s3]='noaa-goes18'
+GBL[s3]='noaa-goes18'
 GBL[pattern]='[012][0-9][0-5][0-9]PST-B2'
 
 # Get Options
