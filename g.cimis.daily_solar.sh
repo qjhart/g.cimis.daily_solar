@@ -74,7 +74,7 @@ function G_linke() {
                     15 15 15 21 21 21 \
                     21 21 21 21 28 28 28 \
                     28 28 28 28 )
-  GBL[linke]="${GBL[MM]}-${closest[${GBL[DD]}]}@linke"
+  GBL[linke]="${GBL[MM]}-${closest[10#${GBL[DD]}]}@linke"
 }
 
 # Get the earliest sunrise and latest sunset
@@ -125,7 +125,7 @@ function fetch_B2() {
   declare -A files
   local day=0
 
-  for doy in ${GBL[DOY]} $(( ${GBL[DOY]} + 1 )); do
+  for doy in ${GBL[DOY]}  $(printf "%03d\n" $(( 10#${GBL[DOY]} + 1 ))); do
     local doy_list=$cache/${doy}.list
     g.message -d debug=$DEBUG message="aws s3 ls s3://${GBL[s3]}/ABI-L1b-RadC/${GBL[YYYY]}/${doy}/ --recursive --no-sign-request"
     if [[ ! -f $doy_list ]]; then
@@ -432,6 +432,8 @@ if ! ${GBL[cleanup]}; then
       exit 0
     fi
   fi
+  # Make sure we have an file past sunset / Hopefully we can avoid this
+  # r.mapcalc --overwrite expression='"2301PST-B2"=0'
   integrated_G
 fi
 # Only remove intermediate files if we are finished or clean
