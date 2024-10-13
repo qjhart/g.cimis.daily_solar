@@ -49,7 +49,7 @@ DEBUG=0
 #%option
 #% key: bucket
 #% type: string
-#% description: cloud provider bucket name, default s3://noaa-goes18
+#% description: cloud provider bucket name, default gs://gcp-public-data-goes-18/ABI-L1b-RadC
 #% required: no
 #% guisection: Main
 #%end
@@ -114,11 +114,10 @@ function get_image_interval_list() {
   echo ${list:0:-1}
 }
 
-# https://github.com/awslabs/open-data-docs/tree/main/docs/noaa/noaa-goes16
 function fetch_B2() {
   local list=$(get_image_interval_list)
   g.message -d debug=$DEBUG message="image_interval_list=$list"
-  # GET Amazon S3 bucket files
+  # GET cloud bucket files
   local cache=${GBL[tmpdir]}/${GBL[YYYY]}/${GBL[MM]}/${GBL[DD]}
   [[ -d $cache ]] || mkdir -p $cache
   local doy
@@ -127,13 +126,22 @@ function fetch_B2() {
 
   for doy in ${GBL[DOY]}  $(printf "%03d\n" $(( 10#${GBL[DOY]} + 1 ))); do
     local doy_list=$cache/${doy}.list
-    g.message -d debug=$DEBUG message="aws s3 ls s3://${GBL[s3]}/ABI-L1b-RadC/${GBL[YYYY]}/${doy}/ --recursive --no-sign-request"
-    if [[ ! -f $doy_list ]]; then
-      aws s3 ls s3://${GBL[s3]}/ABI-L1b-RadC/${GBL[YYYY]}/${doy}/ --recursive --no-sign-request > $doy_list
+
+    if [[ ${GBL[bucket]} =~ ^s3 ]]; then
+      local bk=$(dirname ${GBL[bucket]})
+      g.message -d debug=$DEBUG message="aws s3 ls ${GBL[s3]}/${GBL[YYYY]}/${doy}/ --recursive --no-sign-request"
+      # Normalize list to full path
+      aws s3 ls ${GBL[bucket]}/${GBL[YYYY]}/${doy}/ --recursive --no-sign-request |\
+        grep M6C02_G18 | tr -s ' ' | cut -d' ' -f4 | sed "s!^!$bk/!" > $doy_list
+    elif [[ ${GBL[bucket]} =~ ^gs ]]; then
+      gsutil ls -r ${GBL[bucket]}/${GBL[YYYY]}/${doy}/ |\
+        grep M6C02_G18  > $doy_list
+    else
+      g.message -e "Unknown bucket type ${GBL[bucket]}"
     fi
-    # Get assoc array of filename from aws s3 list
-#    g.message -d debug=$DEBUG message='s/.*_s'"${GBL[YYYY]}${doy}"'\(....\)[0-9][0-9][0-9]_e.*$/\1/'
-    for f in $(grep M6C02_G18 $doy_list | tr -s ' ' | cut -d' ' -f4); do
+
+    # Get assoc array of filename from bucket list
+    for f in $(cat $doy_list); do
       local k=$(echo $f | sed -e 's/.*_s'"${GBL[YYYY]}${doy}"'\(....\)[0-9][0-9][0-9]_e.*$/\1/');
       local hh=$(( $day*24 + 10#${k:0:2} - 8 ))
       local mm=${k:2:2}
@@ -154,22 +162,39 @@ function fetch_B2() {
       local fn=${files[$B]}
       local cache_fn=$cache/$(basename $fn)
       if [[ ! -f $cache_fn ]]; then
-        g.message -d debug=$DEBUG message="aws s3 cp s3://${GBL[s3]}/$fn $cache_fn"
-        aws s3 cp s3://${GBL[s3]}/$fn $cache_fn --no-sign-request
+        if [[ ${GBL[bucket]} =~ ^s3: ]]; then
+          g.message -d debug=$DEBUG message="aws s3 cp $fn $cache_fn"
+          aws s3 cp $fn $cache_fn --no-sign-request
+        elif [[ ${GBL[bucket]} =~ ^gs: ]]; then
+          g.message -d debug=$DEBUG message="gsutil cp $fn $cache_fn"
+          gsutil cp $fn $cache_fn
+        else
+          g.message -e "Unknown bucket type ${GBL[bucket]}"
+        fi
       fi
       # Import the file
       g.message -d debug=$DEBUG message="r.in.gdal input=NETCDF:\"$cache_fn\":Rad output=$B"
       local location=$(g.gisenv get=LOCATION_NAME)
       g.mapset -c location=goes18 mapset=${GBL[MAPSET]}
-      r.in.gdal input=NETCDF:"$cache_fn":Rad output=$B
+      r.in.gdal --quiet input=NETCDF:"$cache_fn":Rad output=$B
       g.mapset location=$location mapset=${GBL[MAPSET]}
-      # Remove cache file
-      [[ ${GBL[save]} ]] || rm -f $cache_fn
       # Project to the correct location
       g.message -d debug=$DEBUG message="r.proj input=$B location=goes18 output=$B method=lanczos"
-      r.proj input=$B location=goes18 output=$B method=lanczos
-      # Remove the original file
-      [[ ${GBL[save]} ]] || (g.mapset location=goes18 mapset=${GBL[mapset]}; g.remove --quiet -f type=rast name=$B location=goes18)
+      r.proj --quiet input=$B location=goes18 output=$B method=lanczos
+    fi
+    # Check to remove cache regardless of save
+    if ! ${GBL[save]}; then
+      local location=$(g.gisenv get=LOCATION_NAME)
+      if [[ -f $cache_fn ]]; then
+        g.message -d debug=$DEBUG message="rm -f $cache_fn";
+        rm -f $cache_fn;
+      fi
+      g.mapset --quiet location=goes18 mapset=${GBL[MAPSET]};
+      if (r.info -r map=$B > /dev/null 2>&1); then
+        g.message -d debug=$DEBUG message="rm $B@${GBL[MAPSET]} location=goes18"
+        g.remove --quiet -f type=rast name=$B;
+        fi
+      g.mapset --quiet location=${location} mapset=${GBL[MAPSET]};
     fi
   done
 }
@@ -373,7 +398,8 @@ GBL[elevation]=Z@500m
 GBL[interval]=20
 GBL[tmpdir]=/var/tmp/cimis
 GBL[DOY]=$(date --date="${GBL[YYYY]}-${GBL[MM]}-${GBL[DD]}" +%j)
-GBL[s3]='noaa-goes18'
+GBL[s3_bucket]='s3://noaa-goes18/ABI-L1b-RadC'
+GBL[gs_bucket]='gs://gcp-public-data-goes-18/ABI-L1b-RadC'
 GBL[pattern]='[012][0-9][0-5][0-9]PST-B2'
 
 # Get Options
@@ -407,12 +433,15 @@ if [ -n "$GIS_OPT_PATTERN" ] ; then
 fi
 
 if [ -n "$GIS_OPT_BUCKET" ] ; then
-  if [[ $GIS_OPT_BUCKET =~ ^s3:// ]]; then
-    GBL[s3]=$(echo $GIS_OPT_PROVIDER | cut -d/ -f3)
+  if [[ $GIS_OPT_BUCKET =~ ^gs:?$ ]]; then
+    GBL[bucket]=${GBL[gs_bucket]}
+  elif [[ $GIS_OPT_BUCKET =~ ^s3:?$ ]]; then
+    GBL[bucket]=${GBL[s3_bucket]}
   else
-    g.message -e "Provider must be s3://bucket"
-    exit 1
-  fi
+    GBL[bucket]=$GIS_OPT_BUCKET
+  fi;
+  else
+    GBL[bucket]=${GBL[gs_bucket]}
 fi
 
 if [ -n "$GIS_OPT_INTERVAL" ] ; then
@@ -424,8 +453,8 @@ if ! ${GBL[cleanup]}; then
   G_linke
   G_sunrise_sunset
   g.message -d debug=$DEBUG message="$(declare -p GBL)"
-  # Fetch files from Amazon S3
-  if [[ -n ${GBL[s3]} ]] ; then
+  # Fetch files
+  if [[ -n ${GBL[bucket]} ]] ; then
     fetch_B2
     if ${GBL[fetch_only]} ;  then
       g.message -d debug=$DEBUG message="fetch only, exiting"
