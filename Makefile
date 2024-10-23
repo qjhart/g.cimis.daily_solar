@@ -1,5 +1,4 @@
-#MODULE_TOPDIR = ../..
-MODULE_TOPDIR = /usr/local/grass83
+MODULE_TOPDIR = ../..
 
 SCRIPTDIR := .
 PGM := g.cimis.daily_solar

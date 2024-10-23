@@ -367,6 +367,9 @@ function cleanup() {
     #$cmd
     g.remove --quiet -f type=rast pattern="[0-9][0-9][0-9][0-9]PST-$t"
   done
+  local cmd="g.remove type=rast pattern='[0-9][0-9][0-9][0-9]PST-B2_5x5'"
+  g.message -d debug=$DEBUG message="$cmd"
+  g.remove --quiet -f type=rast pattern="[0-9][0-9][0-9][0-9]PST-B2_5x5"
 }
 
 
