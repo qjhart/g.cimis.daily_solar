@@ -13,7 +13,7 @@
 #
 #############################################################################
 # Change to 3 for working
-DEBUG=0
+DEBUG=3
 
 #%Module
 #%  description: Runs standard Spatial CIMIS Daily Insolation Calculations
@@ -80,7 +80,7 @@ function G_linke() {
 # Get the earliest sunrise and latest sunset
 function G_sunrise_sunset() {
   if !(g.gisenv get=sunrise store=mapset 2>/dev/null && g.gisenv get=sunset store=mapset 2>/dev/null) || ${GBL[force]}; then
-  g.message -d debug=$DEBUG  message="r.iheliosat --overwrite elevation=${GBL[elevation]} linke=${GBL[linke]} sretr=sretr ssetr=ssetr year=${GBL[YYYY]} month=${GBL[MM]} day=${GBL[DD]}"
+  g.message -v  message="r.iheliosat --overwrite elevation=${GBL[elevation]} linke=${GBL[linke]} sretr=sretr ssetr=ssetr year=${GBL[YYYY]} month=${GBL[MM]} day=${GBL[DD]}"
   r.iheliosat --quiet --overwrite elevation=${GBL[elevation]} linke=${GBL[linke]} sretr=sretr ssetr=ssetr year=${GBL[YYYY]} month=${GBL[MM]} day=${GBL[DD]} timezone=${GBL[tz]}
   eval $(r.info -r sretr) && GBL[sunrise]=${min%.*}
   eval $(r.info -r ssetr) && GBL[sunset]=${max%.*}
@@ -173,28 +173,28 @@ function fetch_B2() {
         fi
       fi
       # Import the file
-      g.message -d debug=$DEBUG message="r.in.gdal input=NETCDF:\"$cache_fn\":Rad output=$B"
-      local location=$(g.gisenv get=LOCATION_NAME)
-      g.mapset -c location=goes18 mapset=${GBL[MAPSET]}
+      g.message -v message="r.in.gdal input=NETCDF:\"$cache_fn\":Rad output=$B"
+      local project=$(g.gisenv get=LOCATION_NAME)
+      g.mapset --quiet -c project=goes18 mapset=${GBL[MAPSET]}
       r.in.gdal --quiet input=NETCDF:"$cache_fn":Rad output=$B
-      g.mapset location=$location mapset=${GBL[MAPSET]}
-      # Project to the correct location
-      g.message -d debug=$DEBUG message="r.proj input=$B location=goes18 output=$B method=lanczos"
-      r.proj --quiet input=$B location=goes18 output=$B method=lanczos
+      g.mapset --quiet project=$project mapset=${GBL[MAPSET]}
+      # Project to the correct project
+      g.message -v message="r.proj input=$B project=goes18 output=$B method=lanczos"
+      r.proj --quiet input=$B project=goes18 output=$B method=lanczos
     fi
     # Check to remove cache regardless of save
     if ! ${GBL[save]}; then
-      local location=$(g.gisenv get=LOCATION_NAME)
+      local project=$(g.gisenv get=LOCATION_NAME)
       if [[ -f $cache_fn ]]; then
         g.message -d debug=$DEBUG message="rm -f $cache_fn";
         rm -f $cache_fn;
       fi
-      g.mapset --quiet location=goes18 mapset=${GBL[MAPSET]};
+      g.mapset --quiet project=goes18 mapset=${GBL[MAPSET]};
       if (r.info -r map=$B > /dev/null 2>&1); then
-        g.message -d debug=$DEBUG message="rm $B@${GBL[MAPSET]} location=goes18"
+        g.message -d debug=$DEBUG message="rm $B@${GBL[MAPSET]} project=goes18"
         g.remove --quiet -f type=rast name=$B;
         fi
-      g.mapset --quiet location=${location} mapset=${GBL[MAPSET]};
+      g.mapset --quiet project=${project} mapset=${GBL[MAPSET]};
     fi
   done
 }
@@ -207,7 +207,7 @@ function rast_Gi() {
   local Gi=${h}${m}PST-Gi
   if (! r.info -h map=$Gi >/dev/null 2>&1 ) || ${GBL[force]}; then
     local cmd="r.iheliosat  --quiet --overwrite elevation=${GBL[elevation]} linke=${GBL[linke]} total=$Gi year=${GBL[YYYY]} month=${GBL[MM]} day=${GBL[DD]} hour=${h} minute=${m} timezone=${GBL[tz]}"
-    g.message -d debug=$DEBUG  message="$cmd"
+    g.message -v  message="$cmd"
     $cmd
   fi
   echo "'$Gi@${GBL[YYYYMMDD]}'"
@@ -222,14 +222,14 @@ function max5x5() {
   local t=${B}_5x5
   if ! (g.gisenv get="$t" store=mapset >/dev/null 2>&1) || ${GBL[force]}; then
     local cmd="r.neighbors --quiet --overwrite input=$B output=$t size=5 method=average"
-    g.message -d debug=$DEBUG message="$cmd"
+    g.message -v message="$cmd"
     $cmd
 	  eval $(r.info -r $t)
     g.gisenv set="$t=${max%.*}" store=mapset
     ${GBL[save]} || g.remove --quiet -f type=rast name=$t
   fi
   local max=$(g.gisenv get="$t" store=mapset)
-  g.message -d debug=$DEBUG message="max($t)=$max"
+  g.message -v message="max($t)=$max"
   echo $max
 }
 
@@ -251,7 +251,7 @@ function rast_P() {
     done
     prev=${prev:0:-1}
     local cmd="r.mapcalc  --quiet --overwrite expression=\"$P\"=min($prev)"
-    g.message -d debug=$DEBUG message="$cmd"
+    g.message -v message="$cmd"
     $cmd
   fi
   echo "'${P}@${GBL[YYYYMMDD]}'"
@@ -269,7 +269,7 @@ function rast_K() {
 	  min(($X-'$B')/($X-$P),1.09),\
 	  min(0.2,(1.667)*(($X-'$B')/($X-$P))^2+(0.333)*(($X-'$B')/($X-'$B'))+0.0667))"
 
-    g.message -d debug=$DEBUG message="r.mapcalc expression=\"$exp\""
+    g.message -v message="r.mapcalc expression=\"$exp\""
     r.mapcalc --overwrite  --quiet expression="$exp"
   fi
   #echo "'$K@${GBL[YYYYMMDD]}'"
@@ -295,7 +295,7 @@ function rast_G() {
       local pK=$(rast_K $pB)
       exp="\"$G\"=$pG+(($pK+$K)/2*($Gi-$pGi))"
     fi
-    g.message -d debug=$DEBUG message="r.mapcalc expression=\"$exp\""
+    g.message -v message="r.mapcalc expression=\"$exp\""
     r.mapcalc  --quiet --overwrite expression="$exp"
   fi
   #echo "'$G@${GBL[YYYYMMDD]}'"
@@ -314,20 +314,20 @@ function integrated_G() {
     local min=$((10#$h*60+10#$m))
     local G
     if [[ $min -gt ${GBL[sunrise]} ]]; then
-      g.message -d debug=$DEBUG message="[[ $min -gt ${GBL[sunrise]} ]]"
+      g.message -v message="[[ $min -gt ${GBL[sunrise]} ]]"
       if [[ $min -lt ${GBL[sunset]} ]]; then
-        g.message -d debug=$DEBUG message="[[ $min -lt ${GBL[sunset]} ]]"
+        g.message -v message="[[ $min -lt ${GBL[sunset]} ]]"
         if [[ -z $pB ]]; then
           G=$(rast_G $B)
-          g.message -d debug=$DEBUG message="sunrise $G"
+          g.message -v message="sunrise $G"
         else
           G=$(rast_G $B $pB)
-          g.message -d debug=$DEBUG message="add $G"
+          g.message -v message="add $G"
         fi
         list+="$B,"
         pB=${B}
       else
-        g.message -d debug=$DEBUG message="last $G"
+        g.message -v message="last $G"
         list+="$B"
         if (! r.info -r Rs >/dev/null 2>&1 ) || ${GBL[force]}; then
           Gi=$(rast_Gi $B)
@@ -335,12 +335,12 @@ function integrated_G() {
           pK=$(rast_K $pB)
           pG=$(rast_G $pB)
           local exp="Rso=$Gi*(0.0036)"
-          g.message -d debug=$DEBUG message="$exp"
+          g.message -v message="$exp"
           r.mapcalc  --quiet --overwrite expression="$exp"
           r.support map=Rso units="MJ/m^2 day" history="using($list)"
 
           exp="Rs=($pG+($pK*($Gi-$pGi)))*0.0036"
-          g.message -d debug=$DEBUG message="$exp"
+          g.message -v message="$exp"
           r.mapcalc  --quiet --overwrite expression="$exp"
           r.support map=Rs units="MJ/m^2 day" history="using($list)"
 
@@ -348,7 +348,7 @@ function integrated_G() {
           g.message -d debug=$DEBUG message="sunset@$B"
 
           exp="K=Rs/Rso"
-          g.message -d debug=$DEBUG message="$exp"
+          g.message -v message="$exp"
           r.mapcalc  --quiet --overwrite expression="$exp"
           r.support map=K description="Clear Sky Index" units="unitless" history="using($list)"
 
@@ -363,12 +363,12 @@ function integrated_G() {
 function cleanup() {
   for t in Gi G K; do
     local cmd="g.remove type=rast pattern='[0-9][0-9][0-9][0-9]PST-$t'"
-    g.message -d debug=$DEBUG message="$cmd"
+    g.message -v message="$cmd"
     #$cmd
     g.remove --quiet -f type=rast pattern="[0-9][0-9][0-9][0-9]PST-$t"
   done
   local cmd="g.remove type=rast pattern='[0-9][0-9][0-9][0-9]PST-B2_5x5'"
-  g.message -d debug=$DEBUG message="$cmd"
+  g.message -v message="$cmd"
   g.remove --quiet -f type=rast pattern="[0-9][0-9][0-9][0-9]PST-B2_5x5"
 }
 
@@ -390,7 +390,7 @@ eval $(g.gisenv)
 declare -g -A GBL
 GBL[GISDBASE]=$GISDBASE
 GBL[MAPSET]=$MAPSET
-GBL[LOCATION_NAME]=$LOCATION_NAME
+GBL[PROJECT]=$LOCATION_NAME
 GBL[YYYYMMDD]=${GBL[MAPSET]}
 GBL[YYYY]=${MAPSET:0:4}
 GBL[MM]=${MAPSET:4:2}
