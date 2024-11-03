@@ -175,12 +175,17 @@ function fetch_B2() {
       fi
       # Import the file
       g.message -v message="r.in.gdal input=NETCDF:\"$cache_fn\":Rad output=$B"
-      g.mapset --quiet -c project=goes18 mapset=${GBL[MAPSET]}
+      if [[ ! -d ${GBL[tmpdir]}/${GBL[MAPSET]} ]]; then
+        mkdir ${GBL[tmpdir]}/${GBL[MAPSET]}
+        ln -s ${GBL[tmpdir]}/${GBL[MAPSET]} ${GBL[GISDBASE]}/goes18/${GBL[MAPSET]}
+        cp -r ${GBL[GISDBASE]}/goes18/PERMANENT/DEFAULT_WIND ${GBL[GISDBASE]}/goes18/${GBL[MAPSET]}/WIND
+      fi
+      g.mapset --verbose project=goes18 mapset=${GBL[MAPSET]}
       r.in.gdal --quiet input=NETCDF:"$cache_fn":Rad output=$B
       g.mapset --quiet project=${GBL[PROJECT]} mapset=${GBL[MAPSET]}
       # Project to the correct project
       g.message -v message="r.proj input=$B project=goes18 output=$B method=lanczos"
-      r.proj --quiet input=$B project=${GBL[PROJECT]} output=$B method=lanczos
+      r.proj --quiet input=$B project=goes18 output=$B method=lanczos
     fi
     # Check to remove cache regardless of save
     if ! ${GBL[save]}; then
@@ -343,7 +348,7 @@ function integrated_G() {
           r.mapcalc  --quiet --overwrite expression="$exp"
           r.support map=Rs units="MJ/m^2 day" history="using($list)"
 
-          g.gisenv set="b2_used=$list" store=mapset
+          g.gisenv set="B2_USED=$list" store=mapset
           g.message -d debug=$DEBUG message="sunset@$B"
 
           exp="K=Rs/Rso"
