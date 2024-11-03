@@ -79,26 +79,26 @@ function G_linke() {
 
 # Get the earliest sunrise and latest sunset
 function G_sunrise_sunset() {
-  if !(g.gisenv get=sunrise store=mapset 2>/dev/null && g.gisenv get=sunset store=mapset 2>/dev/null) || ${GBL[force]}; then
+  if !(g.gisenv get=SUNRISE store=mapset 2>/dev/null && g.gisenv get=SUNSET store=mapset 2>/dev/null) || ${GBL[force]}; then
   g.message -v  message="r.iheliosat --overwrite elevation=${GBL[elevation]} linke=${GBL[linke]} sretr=sretr ssetr=ssetr year=${GBL[YYYY]} month=${GBL[MM]} day=${GBL[DD]}"
   r.iheliosat --quiet --overwrite elevation=${GBL[elevation]} linke=${GBL[linke]} sretr=sretr ssetr=ssetr year=${GBL[YYYY]} month=${GBL[MM]} day=${GBL[DD]} timezone=${GBL[tz]}
-  eval $(r.info -r sretr) && GBL[sunrise]=${min%.*}
-  eval $(r.info -r ssetr) && GBL[sunset]=${max%.*}
-  g.gisenv set="sunrise=${GBL[sunrise]}" store=mapset
-  g.gisenv set="sunset=${GBL[sunset]}" store=mapset
+  eval $(r.info -r sretr) && GBL[SUNRISE]=${min%.*}
+  eval $(r.info -r ssetr) && GBL[SUNSET]=${max%.*}
+  g.gisenv set="SUNRISE=${GBL[SUNRISE]}" store=mapset
+  g.gisenv set="SUNSET=${GBL[SUNSET]}" store=mapset
   ${GBL[save]} || g.remove --quiet -f type=rast name=sretr,ssetr
   else
-    GBL[sunrise]=$(g.gisenv get=sunrise store=mapset)
-    GBL[sunset]=$(g.gisenv get=sunset store=mapset)
+    GBL[SUNRISE]=$(g.gisenv get=SUNRISE store=mapset)
+    GBL[SUNSET]=$(g.gisenv get=SUNSET store=mapset)
   fi
-  g.message -d debug=$DEBUG  message="From ${GBL[sunrise]} to ${GBL[sunset]}"
+  g.message -d debug=$DEBUG  message="From ${GBL[SUNRISE]} to ${GBL[SUNSET]}"
 }
 
 function get_image_interval_list() {
   local interval=${GBL[interval]}
-  local sunrise=${GBL[sunrise]}
-  local sunset=${GBL[sunset]}
-  local from=$(( $sunrise / $interval * $interval ))
+  local SUNRISE=${GBL[SUNRISE]}
+  local SUNSET=${GBL[SUNSET]}
+  local from=$(( $SUNRISE / $interval * $interval ))
   # For GOES 18, intervals start at the 1 minute mark
   from=$(( $from + 1 ))
   local list=
@@ -106,7 +106,7 @@ function get_image_interval_list() {
     local h=$(printf "%02d" $(( $from / 60 )))
     local m=$(printf "%02d" $(( $from % 60 )))
     list+="$h${m}PST-B2 "
-    if [[ $from -gt $sunset ]]; then
+    if [[ $from -gt $SUNSET ]]; then
       break
     fi
     from=$(( $from + $interval ))
@@ -156,7 +156,8 @@ function fetch_B2() {
 #  declare -p files
 
   # Verify setup
-  g.region -d; r.mask -r
+  g.region -d;
+  r.mask -r >/dev/null 2>&1
   for B in $list; do
     if ((! r.info -r $B >/dev/null 2>&1 ) || ${GBL[force]}) && [[ -n ${files[$B]} ]]; then
       local fn=${files[$B]}
@@ -174,27 +175,25 @@ function fetch_B2() {
       fi
       # Import the file
       g.message -v message="r.in.gdal input=NETCDF:\"$cache_fn\":Rad output=$B"
-      local project=$(g.gisenv get=LOCATION_NAME)
       g.mapset --quiet -c project=goes18 mapset=${GBL[MAPSET]}
       r.in.gdal --quiet input=NETCDF:"$cache_fn":Rad output=$B
-      g.mapset --quiet project=$project mapset=${GBL[MAPSET]}
+      g.mapset --quiet project=${GBL[PROJECT]} mapset=${GBL[MAPSET]}
       # Project to the correct project
       g.message -v message="r.proj input=$B project=goes18 output=$B method=lanczos"
-      r.proj --quiet input=$B project=goes18 output=$B method=lanczos
+      r.proj --quiet input=$B project=${GBL[PROJECT]} output=$B method=lanczos
     fi
     # Check to remove cache regardless of save
     if ! ${GBL[save]}; then
-      local project=$(g.gisenv get=LOCATION_NAME)
       if [[ -f $cache_fn ]]; then
         g.message -d debug=$DEBUG message="rm -f $cache_fn";
         rm -f $cache_fn;
       fi
-      g.mapset --quiet project=goes18 mapset=${GBL[MAPSET]};
+      g.mapset --quiet -c project=goes18 mapset=${GBL[MAPSET]};
       if (r.info -r map=$B > /dev/null 2>&1); then
         g.message -d debug=$DEBUG message="rm $B@${GBL[MAPSET]} project=goes18"
         g.remove --quiet -f type=rast name=$B;
         fi
-      g.mapset --quiet project=${project} mapset=${GBL[MAPSET]};
+      g.mapset --quiet project=${GBL[PROJECT]} mapset=${GBL[MAPSET]};
     fi
   done
 }
@@ -313,10 +312,10 @@ function integrated_G() {
     local m=${B:2:2}
     local min=$((10#$h*60+10#$m))
     local G
-    if [[ $min -gt ${GBL[sunrise]} ]]; then
-      g.message -v message="[[ $min -gt ${GBL[sunrise]} ]]"
-      if [[ $min -lt ${GBL[sunset]} ]]; then
-        g.message -v message="[[ $min -lt ${GBL[sunset]} ]]"
+    if [[ $min -gt ${GBL[SUNRISE]} ]]; then
+      g.message -v message="[[ $min -gt ${GBL[SUNRISE]} ]]"
+      if [[ $min -lt ${GBL[SUNSET]} ]]; then
+        g.message -v message="[[ $min -lt ${GBL[SUNSET]} ]]"
         if [[ -z $pB ]]; then
           G=$(rast_G $B)
           g.message -v message="sunrise $G"
