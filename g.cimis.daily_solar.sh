@@ -116,9 +116,16 @@ function get_image_interval_list() {
 
 function verify_or_remove_B2() {
   local B=$1
-  r.mapcalc --quiet --overwrite expression="validB2=not(isnull(\"$B\")) && \"state@500m\""
   local valid_cnt
+  if (! r.info -r $B >/dev/null 2>&1); then
+    g.message -w "Raster $B does not exist"
+    return
+  fi
+  r.mapcalc --quiet --overwrite expression="validB2=not(isnull(\"$B\")) && \"state@500m\""
   valid_cnt=$(r.stats --quiet -c validB2 | grep '^1 ' | cut -d' ' -f2)
+  if [[ -z $valid_cnt ]]; then
+    valid_cnt=0
+  fi
   g.remove --quiet -f type=rast name=validB2
   if (( ${valid_cnt} < ${GBL[mask_cnt]} )); then
     g.remove --quiet -f type=rast name="${B}"
@@ -213,11 +220,9 @@ function fetch_B2() {
       # Project to the correct project
       g.message -v message="r.proj input=$B project=goes18 output=$B method=lanczos"
       r.proj --quiet input=$B project=goes18 output=$B method=lanczos
-
-      # Verify there are no null in raster, delete if there are
-      verify_or_remove_B2 $B
-
     fi
+    # Verify there are no null in raster, delete if there are
+    verify_or_remove_B2 $B
 
     # Check to remove cache regardless of save
     if ! ${GBL[save]}; then
@@ -403,15 +408,12 @@ function integrated_G() {
 
 function cleanup() {
   local cmd
-  for t in Gi G K; do
+  for t in P Gi G K B2_5x5; do
     cmd="g.remove type=rast pattern='[0-9][0-9][0-9][0-9]PST-$t'"
     g.message -v message="$cmd"
     #$cmd
     g.remove --quiet -f type=rast pattern="[0-9][0-9][0-9][0-9]PST-$t"
   done
-  cmd="g.remove type=rast pattern='[0-9][0-9][0-9][0-9]PST-B2_5x5'"
-  g.message -v message="$cmd"
-  g.remove --quiet -f type=rast pattern="[0-9][0-9][0-9][0-9]PST-B2_5x5"
 }
 
 
