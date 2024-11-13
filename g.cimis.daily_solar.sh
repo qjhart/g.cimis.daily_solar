@@ -83,7 +83,7 @@ function G_linke() {
 
 # Get the earliest sunrise and latest sunset
 function G_sunrise_sunset() {
-  if ! (g.gisenv --quiet get=SUNRISE store=mapset >/dev/null && g.gisenv --quiet get=SUNSET store=mapset >/dev/null ) || ${GBL[force]}; then
+  if ! (g.gisenv --quiet get=SUNRISE store=mapset >/dev/null 2>&1 && g.gisenv --quiet get=SUNSET store=mapset >/dev/null 2>&1 ) || ${GBL[force]}; then
   g.message -d debug=$DEBUG message="r.iheliosat --overwrite elevation=${GBL[elevation]} linke=${GBL[linke]} sretr=sretr ssetr=ssetr year=${GBL[YYYY]} month=${GBL[MM]} day=${GBL[DD]}"
   r.iheliosat --quiet --overwrite elevation=${GBL[elevation]} linke=${GBL[linke]} sretr=sretr ssetr=ssetr year=${GBL[YYYY]} month=${GBL[MM]} day=${GBL[DD]} timezone=${GBL[tz]}
   eval "$(r.info -r sretr)" && GBL[SUNRISE]=${min%.*}
