@@ -420,7 +420,7 @@ function integrated_G() {
 
 function cleanup() {
   local cmd
-  for t in P Gi G K B2_5x5; do
+  for t in P Gi G K B2_5X5; do
     cmd="g.remove type=rast pattern='[0-9][0-9][0-9][0-9]PST-$t'"
     g.message -v message="$cmd"
     #$cmd
